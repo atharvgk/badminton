@@ -16,11 +16,22 @@ export default function Admin() {
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [deletingPlayer, setDeletingPlayer] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // Winner state: { [matchId]: winnerName }
+  const [winners, setWinners] = useState<{ [matchId: string]: string }>({});
+  const [showFinals, setShowFinals] = useState(false);
+  const [quarterFinals, setQuarterFinals] = useState<{ player1: string; player2: string }[]>([]);
+  const [semiFinals, setSemiFinals] = useState<{ player1: string; player2: string }[]>([]);
+  const [topTeams, setTopTeams] = useState<string[]>([]);
 
   async function handleGenerate() {
     setGenerating(true);
     await fetch("/api/generateSchedule", { method: "POST" });
     await mutateMatches();
+    setWinners({});
+    setShowFinals(false);
+    setQuarterFinals([]);
+    setSemiFinals([]);
+    setTopTeams([]);
     setGenerating(false);
   }
 
@@ -70,10 +81,66 @@ export default function Admin() {
 
       await mutatePlayers();
       await mutateMatches();
+      setWinners({});
+      setShowFinals(false);
+      setQuarterFinals([]);
+      setSemiFinals([]);
+      setTopTeams([]);
     } catch (err) {
       setError("Failed to delete player");
     } finally {
       setDeletingPlayer(null);
+    }
+  }
+
+  // Handle winner selection for a match
+  function handleWinnerSelect(matchId: string, winnerName: string) {
+    setWinners((prev) => ({ ...prev, [matchId]: winnerName }));
+    setShowFinals(false);
+    setQuarterFinals([]);
+    setSemiFinals([]);
+    setTopTeams([]);
+  }
+
+  // Calculate wins for each player
+  let winCount: { [player: string]: number } = {};
+  if (matches && matches.length > 0) {
+    matches.forEach((m: any) => {
+      const winner = winners[m._id];
+      if (winner) {
+        winCount[winner] = (winCount[winner] || 0) + 1;
+      }
+    });
+  }
+
+  // Button handler to show finals
+  function handleShowFinals() {
+    if (!players) return;
+    const sorted = players
+      .map((p) => ({ name: p.name, wins: winCount[p.name] || 0 }))
+      .sort((a, b) => b.wins - a.wins)
+      .map((p) => p.name);
+    setTopTeams(sorted);
+    if (sorted.length >= 9) {
+      setQuarterFinals([
+        { player1: sorted[0], player2: sorted[7] },
+        { player1: sorted[1], player2: sorted[6] },
+        { player1: sorted[2], player2: sorted[5] },
+        { player1: sorted[3], player2: sorted[4] },
+      ]);
+      setSemiFinals([]);
+      setShowFinals(true);
+    } else if (sorted.length >= 4) {
+      setQuarterFinals([]);
+      setSemiFinals([
+        { player1: sorted[0], player2: sorted[3] },
+        { player1: sorted[1], player2: sorted[2] },
+      ]);
+      setShowFinals(true);
+    } else {
+      setQuarterFinals([]);
+      setSemiFinals([]);
+      setShowFinals(false);
     }
   }
 
@@ -146,6 +213,7 @@ export default function Admin() {
                 <th>Match No.</th>
                 <th>Player A</th>
                 <th>Player B</th>
+                <th>Winner</th>
               </tr>
             </thead>
             <tbody>
@@ -154,6 +222,57 @@ export default function Admin() {
                   <td>{m.matchNo ?? (index + 1)}</td>
                   <td>{m.playerA}</td>
                   <td>{m.playerB}</td>
+                  <td>
+                    <label>
+                      <input
+                        type="radio"
+                        name={`winner-${m._id}`}
+                        checked={winners[m._id] === m.playerA}
+                        onChange={() => handleWinnerSelect(m._id, m.playerA)}
+                      />
+                      {" "}A
+                    </label>
+                    <label style={{ marginLeft: 8 }}>
+                      <input
+                        type="radio"
+                        name={`winner-${m._id}`}
+                        checked={winners[m._id] === m.playerB}
+                        onChange={() => handleWinnerSelect(m._id, m.playerB)}
+                      />
+                      {" "}B
+                    </label>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button onClick={handleShowFinals} style={{ marginTop: 10 }}>
+            Show {topTeams.length<9 ? "Semi" : "Quarter"} Finals
+          </button>
+        </div>
+      )}
+
+      {matches && matches.length === 0 && players && players.length >= 2 && (
+        <p>No matches generated yet. Click "Generate Schedule" to create matches.</p>
+      )}
+
+      {showFinals && quarterFinals.length === 4 && (
+        <div>
+          <h2>Quarter Final Fixtures</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Match</th>
+                <th>Player 1</th>
+                <th>Player 2</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quarterFinals.map((qf, idx) => (
+                <tr key={idx}>
+                  <td>{`QF${idx + 1}`}</td>
+                  <td>{qf.player1}</td>
+                  <td>{qf.player2}</td>
                 </tr>
               ))}
             </tbody>
@@ -161,8 +280,28 @@ export default function Admin() {
         </div>
       )}
 
-      {matches && matches.length === 0 && players && players.length >= 2 && (
-        <p>No matches generated yet. Click "Generate Schedule" to create matches.</p>
+      {showFinals && semiFinals.length === 2 && (
+        <div>
+          <h2>Semi Final Fixtures</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Match</th>
+                <th>Player 1</th>
+                <th>Player 2</th>
+              </tr>
+            </thead>
+            <tbody>
+              {semiFinals.map((sf, idx) => (
+                <tr key={idx}>
+                  <td>{`SF${idx + 1}`}</td>
+                  <td>{sf.player1}</td>
+                  <td>{sf.player2}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
